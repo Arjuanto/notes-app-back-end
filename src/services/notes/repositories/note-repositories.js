@@ -1,34 +1,37 @@
 import { Pool } from 'pg';
 import { nanoid } from 'nanoid';
+import { NotFoundError } from '../../../exceptions/index.js';
+import AuthorizationError from '../../../exceptions/authorization-error.js';
 
 class NoteRepositories {
     constructor() {
         this.pool = new Pool();
     }
 
-    async createNote({ title, body, tags }) {
+    async createNote({ title, body, tags, owner }) {
         const id = nanoid(16);
         const createdAt = new Date().toISOString();
         const updatedAt = createdAt;
-
         const query = {
-            text: 'INSERT INTO notes(id, title, body, tags, created_at, updated_at) VALUES($1, $2, $3, $4, $5, $6) RETURNING id, title, body, tags, created_at, updated_at',
-            values: [id, title, body, tags, createdAt, updatedAt],
+            text: 'INSERT INTO notes(id, title, body, tags, created_at, updated_at, owner) VALUES($1, $2, $3, $4, $5, $6, $7) RETURNING id, title, body, tags, created_at, updated_at',
+            values: [id, title, body, tags, createdAt, updatedAt, owner],
         };
-
         const result = await this.pool.query(query);
-
         return result.rows[0];
     }
 
-    async getNotes() {
-        const result = await this.pool.query('SELECT * FROM notes');
+    async getNotes(owner) {
+        const query = {
+            text: 'SELECT id, title, body, tags, created_at AS "createdAt", updated_at AS "updatedAt" FROM notes WHERE owner = $1',
+            values: [owner],
+        };
+        const result = await this.pool.query(query);
         return result.rows;
     }
 
     async getNoteById(id) {
         const query = {
-            text: 'SELECT * FROM notes WHERE id = $1',
+            text: 'SELECT id, title, body, tags, created_at AS "createdAt", updated_at AS "updatedAt" FROM notes WHERE id = $1',
             values: [id],
         };
 
@@ -58,7 +61,23 @@ class NoteRepositories {
 
         const result = await this.pool.query(query);
 
-        return result.rows[0].id;
+        return result.rows[0];
+    }
+
+    async verifyNoteOwner(id, owner) {
+        const query = {
+            text: 'SELECT * FROM notes WHERE id = $1',
+            values: [id],
+        };
+        const result = await this.pool.query(query);
+        if (!result.rows.length) {
+            throw new NotFoundError('Catatan tidak ditemukan');
+        }
+        const note = result.rows[0];
+        if (note.owner !== owner) {
+            throw new AuthorizationError('Anda tidak berhak mengakses resource ini');
+        }
+        return result.rows[0];
     }
 }
 
